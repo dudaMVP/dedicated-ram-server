@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"strings"
 	"sync/atomic"
+
+	_ "github.com/lib/pq"
 )
 
 func ReadinessEndpoint(w http.ResponseWriter, r *http.Request) {
