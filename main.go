@@ -1,13 +1,18 @@
 package main
 
 import (
+	"database/sql"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
+	"os"
 	"strings"
 	"sync/atomic"
 
+	"github.com/joho/godotenv"
 	_ "github.com/lib/pq"
+	"github.com/mhishmeh/dedicated-ram-server/internal/database"
 )
 
 func ReadinessEndpoint(w http.ResponseWriter, r *http.Request) {
@@ -21,6 +26,7 @@ func ReadinessEndpoint(w http.ResponseWriter, r *http.Request) {
 
 type apiConfig struct {
 	fileserverHits atomic.Int32
+	DB             *database.Queries
 }
 
 func (cfg *apiConfig) middlewareMetricsInc(next http.Handler) http.Handler {
@@ -41,6 +47,8 @@ func (cfg *apiConfig) metricsHandler(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "<html><body><h1>Welcome, Chirpy Admin</h1><p>Chirpy has been visited %d times!</p></body></html>", count)
 
 }
+
+//func (cfg *apiConfig)
 
 func (cfg *apiConfig) resetHandler(w http.ResponseWriter, r *http.Request) {
 	cfg.fileserverHits.Store(0)
@@ -122,8 +130,10 @@ func Validate_Chirp_Endpoint(w http.ResponseWriter, r *http.Request) {
 
 }
 
-func createServer() {
-	apiC := apiConfig{}
+func createServer(dbQueries *database.Queries) {
+	apiC := apiConfig{
+		DB: dbQueries,
+	}
 	mux := http.NewServeMux()
 	server := &http.Server{
 		Handler: mux,
@@ -151,6 +161,13 @@ func createServer() {
 }
 
 func main() {
+	godotenv.Load()
+	dbURL := os.Getenv("DB_URL")
+	db, err := sql.Open("postgres", dbURL)
+	if err != nil {
+		log.Fatal("cannot start seerrvurrr")
+	}
+	dbQueries := database.New(db)
+	createServer(dbQueries) // Pass dbQueries here
 
-	createServer()
 }

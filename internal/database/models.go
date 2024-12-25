@@ -14,5 +14,5 @@ type User struct {
 	ID        uuid.UUID
 	CreatedAt sql.NullTime
 	UpdatedAt sql.NullTime
-	Email     string
+	Email     sql.NullString
 }
