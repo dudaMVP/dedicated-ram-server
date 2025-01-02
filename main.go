@@ -7,7 +7,7 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"strings"
+
 	"sync/atomic"
 	"time"
 
@@ -29,39 +29,13 @@ func ReadinessEndpoint(w http.ResponseWriter, r *http.Request) {
 type apiConfig struct {
 	fileserverHits atomic.Int32
 	db             *database.Queries
+	platform       string
 }
 type User struct {
 	ID        uuid.UUID `json:"id"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 	Email     string    `json:"email"`
-}
-
-func respondWithError(w http.ResponseWriter, code int, msg string, err error) {
-	if err != nil {
-		log.Println(err)
-	}
-	if code > 499 {
-		log.Printf("Responding with 5XX error: %s", msg)
-	}
-	type errorResponse struct {
-		Error string `json:"error"`
-	}
-	respondWithJSON(w, code, errorResponse{
-		Error: msg,
-	})
-}
-
-func respondWithJSON(w http.ResponseWriter, code int, payload interface{}) {
-	w.Header().Set("Content-Type", "application/json")
-	dat, err := json.Marshal(payload)
-	if err != nil {
-		log.Printf("Error marshalling JSON: %s", err)
-		w.WriteHeader(500)
-		return
-	}
-	w.WriteHeader(code)
-	w.Write(dat)
 }
 
 func (cfg *apiConfig) handlerUsersCreate(w http.ResponseWriter, r *http.Request) {
@@ -115,91 +89,25 @@ func (cfg *apiConfig) metricsHandler(w http.ResponseWriter, r *http.Request) {
 
 }
 
-//func (cfg *apiConfig)
-
 func (cfg *apiConfig) resetHandler(w http.ResponseWriter, r *http.Request) {
+	if cfg.platform != "dev" {
+		w.WriteHeader(http.StatusForbidden)
+		w.Write([]byte("Reset is only allowed in dev environment."))
+		return
+	}
+
 	cfg.fileserverHits.Store(0)
+	cfg.db.DeleteAllUsers(r.Context())
 	w.WriteHeader(http.StatusOK)
-
-}
-
-func Validate_Chirp_Endpoint(w http.ResponseWriter, r *http.Request) {
-	type ChirpRequest struct {
-		Body string `json:"body"`
-	}
-	type ErrorResponse struct {
-		Error string `json:"error"`
-	}
-	type returnVals struct {
-		CleanedBody string `json:"cleaned_body"`
-	}
-
-	decoder := json.NewDecoder(r.Body)
-	Chirp := ChirpRequest{}
-	err := decoder.Decode(&Chirp)
-	if err != nil {
-		errorResponse := ErrorResponse{
-			Error: "Invalid JSON in request body",
-		}
-		jsonResponse, _ := json.Marshal(errorResponse)
-		w.WriteHeader(400)
-		w.Header().Set("Content-Type", "application/json")
-		w.Write(jsonResponse)
-		return
-	}
-
-	if len(Chirp.Body) > 140 {
-		errorResponse := ErrorResponse{
-			Error: "Chirp is too long",
-		}
-		jsonResponse, err := json.Marshal(errorResponse)
-		if err != nil {
-			// Log the error, set the status code and return
-		}
-		w.WriteHeader(400)
-		w.Header().Set("Content-Type", "application/json")
-		w.Write(jsonResponse)
-		return
-
-	} else {
-
-		w.WriteHeader(200)
-		w.Header().Set("Content-Type", "application/json")
-
-		// Define the set of keywords to censor
-		keywords := map[string]struct{}{
-			"kerfuffle": {},
-			"sharbert":  {},
-			"fornax":    {}, // Add more keywords as needed
-		}
-
-		// Split the body into a slice
-		words := strings.Fields(Chirp.Body)
-
-		// Loop through the words and replace keywords with "****"
-		for i, word := range words {
-			if _, found := keywords[strings.ToLower(word)]; found {
-				words[i] = "****"
-			}
-		}
-
-		modifiedBody := strings.Join(words, " ")
-		cleanedBody := returnVals{
-			CleanedBody: modifiedBody,
-		}
-		jsonResponse, _ := json.Marshal(cleanedBody)
-
-		// Write the modified response
-		w.Write(jsonResponse)
-		return
-
-	}
-
+	w.Write([]byte("Hits reset to 0 and database reset to initial state."))
 }
 
 func createServer(dbQueries *database.Queries) {
+	platform := os.Getenv("PLATFORM")
 	apiC := apiConfig{
-		db: dbQueries,
+		fileserverHits: atomic.Int32{},
+		db:             dbQueries,
+		platform:       platform,
 	}
 	mux := http.NewServeMux()
 	server := &http.Server{
@@ -215,10 +123,12 @@ func createServer(dbQueries *database.Queries) {
 	mux.Handle("/assets", http.FileServer(http.Dir("./assets/logo.png")))
 	mux.HandleFunc("GET /api/healthz", ReadinessEndpoint) //readinessEndpoint
 
+	mux.HandleFunc("POST /api/chirps", apiC.handlerChirpsCreate)
+
 	mux.HandleFunc("GET /admin/metrics", apiC.metricsHandler) //metrics holder
 	mux.HandleFunc("POST /admin/reset", apiC.resetHandler)
 	mux.HandleFunc("POST /api/users", apiC.handlerUsersCreate)
-	mux.HandleFunc("POST /api/validate_chirp", Validate_Chirp_Endpoint)
+	//mux.HandleFunc("POST /api/validate_chirp", Validate_Chirp_Endpoint)
 
 	addr := server.Addr
 	fmt.Println("Starting server on", addr)
