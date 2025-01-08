@@ -2,16 +2,13 @@ package main
 
 import (
 	"database/sql"
-	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
 
 	"sync/atomic"
-	"time"
 
-	"github.com/google/uuid"
 	"github.com/joho/godotenv"
 	_ "github.com/lib/pq"
 	"github.com/mhishmeh/dedicated-ram-server/internal/database"
@@ -30,44 +27,6 @@ type apiConfig struct {
 	fileserverHits atomic.Int32
 	db             *database.Queries
 	platform       string
-}
-type User struct {
-	ID        uuid.UUID `json:"id"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
-	Email     string    `json:"email"`
-}
-
-func (cfg *apiConfig) handlerUsersCreate(w http.ResponseWriter, r *http.Request) {
-	type parameters struct {
-		Email string `json:"email"`
-	}
-	type response struct {
-		User
-	}
-
-	decoder := json.NewDecoder(r.Body)
-	params := parameters{}
-	err := decoder.Decode(&params)
-	if err != nil {
-		respondWithError(w, http.StatusInternalServerError, "Couldn't decode parameters", err)
-		return
-	}
-
-	user, err := cfg.db.CreateUser(r.Context(), params.Email)
-	if err != nil {
-		respondWithError(w, http.StatusInternalServerError, "Couldn't create user", err)
-		return
-	}
-
-	respondWithJSON(w, http.StatusCreated, response{
-		User: User{
-			ID:        user.ID,
-			CreatedAt: user.CreatedAt,
-			UpdatedAt: user.UpdatedAt,
-			Email:     user.Email,
-		},
-	})
 }
 
 func (cfg *apiConfig) middlewareMetricsInc(next http.Handler) http.Handler {
@@ -123,7 +82,10 @@ func createServer(dbQueries *database.Queries) {
 	mux.Handle("/assets", http.FileServer(http.Dir("./assets/logo.png")))
 	mux.HandleFunc("GET /api/healthz", ReadinessEndpoint) //readinessEndpoint
 
-	mux.HandleFunc("POST /api/chirps", apiC.handlerChirpsCreate)
+	mux.HandleFunc("POST /api/chirps", apiC.handlerChirpsCreate) // create a chirp for a user
+
+	mux.HandleFunc("GET /api/chirps", apiC.handlerChirpsRetrieve) // get all chrips
+	mux.HandleFunc("GET /api/chirps/{chirpID}", apiC.handlerGetSingleChirp)
 
 	mux.HandleFunc("GET /admin/metrics", apiC.metricsHandler) //metrics holder
 	mux.HandleFunc("POST /admin/reset", apiC.resetHandler)
