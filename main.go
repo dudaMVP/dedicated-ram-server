@@ -90,6 +90,8 @@ func createServer(dbQueries *database.Queries) {
 	mux.HandleFunc("GET /admin/metrics", apiC.metricsHandler) //metrics holder
 	mux.HandleFunc("POST /admin/reset", apiC.resetHandler)
 	mux.HandleFunc("POST /api/users", apiC.handlerUsersCreate)
+
+	mux.HandleFunc("POST /api/login", apiC.handlerLogin)
 	//mux.HandleFunc("POST /api/validate_chirp", Validate_Chirp_Endpoint)
 
 	addr := server.Addr
